@@ -1,0 +1,113 @@
+---
+title: "Application of Decision Tree Algorithm to Human Activity Recognition Data Set"
+author: "Psidom"
+date: "July 21, 2015"
+output: html_document
+---
+
+In this paper, a data set from Human Activity Recognition is investigated using decision tree algorithm with both single tree and ensemble tree method. A ten-fold cross validation method is applied to the single tree method to validate the model. An improved accuracy was observed for ensemble tree model as is expected.
+
+Data Cleaning and Preprocessing
+---
+
+Before starting to use the data to build models, it is wise to first check and preprocess the data so that the processing time will be reduced and irrelevant variables will be excluded. First of all, the test data set was investigated and variables which only consist of NAs were removed. And also the first five variables which are "X", "username" and "timestamps" were also removed. The justification for this is that these variables provide irrelevant information for the human activity measurements and including them in the model can be misleading. For example, the "X" variable is just an index of all the measurements but the data set is ordered in such a way that if we include the "X" variable in the model the "classe" will be perfectly explained by "X" which does not make sense.   
+
+```{r}
+Data <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+test <- test[,colSums(is.na(test))!= nrow(test)] # remove columns that consist of solely NA's
+names <- c(names(test)[-c(1:5, 60)], "classe") # remove columns that consist of variables that are most likely irrelevant
+test <- test[, -c(1:5)]
+Data <- Data[, names] 
+```
+
+Create Data Partition for Cross Validation
+---
+After the right data set is obtained, it is further partitioned into a training data set and test data set for cross validation purpose. The partition was set at 0.75 which means the data set to test set size ration will be 3.  
+
+```{r}
+library(caret); library(kernlab); library(rpart)
+inTrain <- createDataPartition(y = Data$classe,
+                               p = 0.75,
+                               list = F)
+trainSet <- Data[inTrain,]
+testSet <- Data[-inTrain,]
+```
+
+Decision Tree with Cart Model
+---
+
+After the partitioning of the data set, a decision tree was build with the *rpart* method which generates a cart model. The method in *rpart* and type in *predict* are set as "class" so that it is easier to build the confusion Matrix. After the confusion Matrix was built, a function was written to calculate the weight of the diagonal summation within all the measurements, which gives the accuracy.
+
+```{r}
+cartModel <- rpart(classe~., data = trainSet, method = "class") # build a cart model with the train data set
+printcp(cartModel)
+cartPred <- predict(cartModel, newdata = testSet, type = "class") # use the cart model to predict the test data set
+conMatrix <- table(cartPred, testSet$classe) # make the confusion matrix from the predicted "classe" variable and actual "classe" variable
+acc <- function(conMatrix) {
+  sum = 0
+  for(i in 1:dim(conMatrix)[1]) {
+    sum = sum + conMatrix[i,i]
+  } 
+  acc <- sum/sum(conMatrix)
+  return(acc)
+  } # function to calculate the accuracy from the confusion matrix
+ACC <- acc(conMatrix)
+
+```
+```{r echo=F}
+print("The predicted accuracy is:")
+ACC # print the accuracy
+```
+Ten-fold Cross Validation
+---
+In order to get a more accurate assessment of the accuracy, a 10-fold cross validation is set as follows. The random generator in the *createDataPartition* function automatically make the ten trials different, which make this meaningfull.
+```{r}
+sum = 0
+for(i in 1:10) {
+    inTrain <- createDataPartition(y = Data$classe,
+                               p = 0.75,
+                               list = F)
+    trainSet <- Data[inTrain,]
+    testSet <- Data[-inTrain,]
+    cartModel <- rpart(classe~., data = trainSet, method = "class")
+    cartPred <- predict(cartModel, newdata = testSet, type = "class")
+    conMatrix <- table(cartPred, testSet$classe)
+    ACC <- acc(conMatrix)
+    sum = sum + ACC
+}
+
+```
+```{r echo = F}
+print("The average accuracy is:")
+sum/10
+```
+Random Forest
+---
+Furthermore, a random forest algorithm was used to build an ensemble tree model which is believed to be more powerful than a single tree, and the accuracy indeed justifies this statement.
+```{r}
+library(randomForest)
+inTrain <- createDataPartition(y = Data$classe,
+                               p = 0.75,
+                               list = F)
+trainSet <- Data[inTrain,]
+testSet <- Data[-inTrain,]
+rfModel <- randomForest(classe~., data=trainSet)
+rfPred <- predict(rfModel, newdata = testSet)
+conMatrix <- table(rfPred, testSet$classe)
+conMatrix
+ACC <- acc(conMatrix)
+
+```
+```{r echo = F}
+print("The accuracy of the random forest model is: ")
+ACC
+```
+Predict the Test Data using Random Forest Model
+---
+Finally, the random forest model was used to predict the test data.
+```{r}
+levels(test$new_window) <- levels(trainSet$new_window) # In order for random forest predict function to work, the levels of the predictor variable must be the same if it is factor variable
+testPred <- predict(rfModel, newdata = test)
+testPred
+```
